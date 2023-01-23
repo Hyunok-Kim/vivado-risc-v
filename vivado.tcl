@@ -25,8 +25,9 @@ set source_fileset [get_filesets sources_1]
 set constraint_fileset [get_filesets constrs_1]
 
 set files [list \
- [file normalize "rocket.vhdl"] \
+ [file normalize "rocket.v"] \
  [file normalize "srams.v"] \
+ [file normalize "plusarg_reader.v"] \
  [file normalize "system-${vivado_board_name}.v"] \
  [file normalize "../../uart/uart.v"] \
  [file normalize "../../sdc/sd_defines.h"] \
@@ -39,6 +40,8 @@ set files [list \
  [file normalize "../../board/${vivado_board_name}/ethernet-${vivado_board_name}.v"] \
  [file normalize "../../board/mem-reset-control.v"] \
  [file normalize "../../board/fan-control.v"] \
+ [file normalize "../../board/axi4_addr_map.v"] \
+ [file normalize "../../board/riscv_reset.v"] \
 ]
 add_files -norecurse -fileset $source_fileset $files
 

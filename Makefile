@@ -205,7 +205,7 @@ workspace/patch-hdl-done:
 workspace/$(CONFIG)/system.dts: $(CHISEL_SRC) rocket-chip/bootrom/bootrom.img workspace/patch-hdl-done
 	mkdir -p workspace/$(CONFIG)/tmp
 	cp rocket-chip/bootrom/bootrom.img workspace/bootrom.img
-	$(SBT) "runMain freechips.rocketchip.system.Generator -td workspace/$(CONFIG)/tmp -T Vivado.RocketSystem -C Vivado.$(CONFIG_SCALA)"
+	$(SBT) "runMain freechips.rocketchip.system.Generator -td workspace/$(CONFIG)/tmp -T Vivado.RocketChip -C Vivado.$(CONFIG_SCALA)"
 	mv workspace/$(CONFIG)/tmp/Vivado.$(CONFIG_SCALA).anno.json workspace/$(CONFIG)/system.anno.json
 	mv workspace/$(CONFIG)/tmp/Vivado.$(CONFIG_SCALA).dts workspace/$(CONFIG)/system.dts
 	rm -rf workspace/$(CONFIG)/tmp
@@ -224,14 +224,14 @@ workspace/$(CONFIG)/system-$(BOARD)/Vivado.$(CONFIG_SCALA).fir: workspace/$(CONF
 	make -C bootrom CROSS_COMPILE="$(CROSS_COMPILE_NO_OS_TOOLS)" CFLAGS="$(CROSS_COMPILE_NO_OS_FLAGS)" BOARD=$(BOARD) clean bootrom.img
 	mv bootrom/system.dts workspace/$(CONFIG)/system-$(BOARD).dts
 	mv bootrom/bootrom.img workspace/bootrom.img
-	$(SBT) "runMain freechips.rocketchip.system.Generator -td workspace/$(CONFIG)/system-$(BOARD) -T Vivado.RocketSystem -C Vivado.$(CONFIG_SCALA)"
+	$(SBT) "runMain freechips.rocketchip.system.Generator -td workspace/$(CONFIG)/system-$(BOARD) -T Vivado.RocketChip -C Vivado.$(CONFIG_SCALA)"
 	cd rocket-chip && $(SBT) assembly
 	rm workspace/bootrom.img
 
 # Generate Rocket SoC HDL
 workspace/$(CONFIG)/system-$(BOARD).v: workspace/$(CONFIG)/system-$(BOARD)/Vivado.$(CONFIG_SCALA).fir
-	$(FIRRTL) -i $< -o system-$(BOARD).v -X verilog --infer-rw RocketSystem --repl-seq-mem \
-	  -c:RocketSystem:-o:`realpath workspace/$(CONFIG)/srams.conf` \
+	$(FIRRTL) -i $< -o system-$(BOARD).v -X verilog --infer-rw RocketChip --repl-seq-mem \
+	  -c:RocketChip:-o:`realpath workspace/$(CONFIG)/srams.conf` \
 	  -faf `realpath workspace/$(CONFIG)/system.anno.json` \
 	  -td workspace/$(CONFIG)/ \
 	  -fct firrtl.passes.InlineInstances
@@ -241,16 +241,8 @@ workspace/$(CONFIG)/srams.v: workspace/$(CONFIG)/system-$(BOARD).v
 	./mk-srams workspace/$(CONFIG)/srams.conf >workspace/$(CONFIG)/srams.v
 
 # Generate Rocket SoC wrapper for Vivado
-workspace/$(CONFIG)/rocket.vhdl: workspace/$(CONFIG)/system-$(BOARD).v
-	mkdir -p vhdl-wrapper/bin
-	javac -g -nowarn \
-	  -sourcepath vhdl-wrapper/src -d vhdl-wrapper/bin \
-	  -classpath vhdl-wrapper/antlr-4.8-complete.jar \
-	  vhdl-wrapper/src/net/largest/riscv/vhdl/Main.java
-	java -Xmx4G -Xss8M $(JAVA_OPTIONS) -cp \
-	  vhdl-wrapper/src:vhdl-wrapper/bin:vhdl-wrapper/antlr-4.8-complete.jar \
-	  net.largest.riscv.vhdl.Main -m $(CONFIG_SCALA) \
-	  workspace/$(CONFIG)/system-$(BOARD).v >$@
+workspace/$(CONFIG)/rocket.v: workspace/$(CONFIG)/system-$(BOARD).v
+	 sed "s#module RocketChip(#module $(CONFIG_SCALA)(#" $< > $@
 
 # --- utility make targets to run SBT command line ---
 
@@ -278,7 +270,7 @@ memcfg_file = workspace/$(CONFIG)/$(proj_name).$(CFG_FORMAT)
 prm_file    = workspace/$(CONFIG)/$(proj_name).prm
 vivado      = env XILINX_LOCAL_USER_DATA=no vivado -mode batch -nojournal -nolog -notrace -quiet
 
-workspace/$(CONFIG)/system-$(BOARD).tcl: workspace/$(CONFIG)/rocket.vhdl workspace/$(CONFIG)/srams.v
+workspace/$(CONFIG)/system-$(BOARD).tcl: workspace/$(CONFIG)/rocket.v workspace/$(CONFIG)/srams.v
 	echo "set vivado_board_name $(BOARD)" >$@
 	if [ "$(BOARD_PART)" != "" -a "$(BOARD_PART)" != "NONE" ] ; then echo "set vivado_board_part $(BOARD_PART)" >>$@ ; fi
 	if [ "$(BOARD_CONFIG)" != "" ] ; then echo "set board_config $(BOARD_CONFIG)" >>$@ ; fi

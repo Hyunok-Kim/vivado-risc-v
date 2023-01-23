@@ -3,10 +3,7 @@
 set main_clock [get_clocks -of_objects [get_pins -hier RocketChip/clock]]
 set main_clock_period [get_property -min PERIOD $main_clock]
 
-set_false_path -through [get_pins -hier RocketChip/clock_ok]
-set_false_path -through [get_pins -hier RocketChip/mem_ok]
-set_false_path -through [get_pins -hier RocketChip/io_ok]
-set_false_path -through [get_pins -hier RocketChip/sys_reset]
+set_false_path -through [get_pins -hier RocketChip/reset]
 
 #------------------ Ethernet adapter
 
