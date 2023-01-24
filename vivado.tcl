@@ -42,6 +42,7 @@ set files [list \
  [file normalize "../../board/fan-control.v"] \
  [file normalize "../../board/axi4_addr_map.v"] \
  [file normalize "../../board/riscv_reset.v"] \
+ [file normalize "../../rocket-chip/src/main/resources/vsrc/EICG_wrapper.v"] \
 ]
 add_files -norecurse -fileset $source_fileset $files
 
@@ -81,8 +82,8 @@ set_property -name "used_in_synthesis" -value "0" -objects $file_obj
 source ../../board/${vivado_board_name}/${block_design_tcl}
 
 if { [llength [get_bd_intf_pins -quiet RocketChip/JTAG]] == 1 } {
-  create_bd_cell -type module -reference bscan2jtag JTAG
-  connect_bd_intf_net -intf_net JTAG [get_bd_intf_pins JTAG/JTAG] [get_bd_intf_pins RocketChip/JTAG]
+  create_bd_cell -type ip -vlnv xilinx.com:ip:bscan_jtag:1.0 JTAG
+  connect_bd_intf_net -intf_net JTAG [get_bd_intf_pins JTAG/M_JTAG] [get_bd_intf_pins RocketChip/JTAG]
   create_bd_cell -type ip -vlnv xilinx.com:ip:debug_bridge:3.0 BSCAN
   set_property -dict [list CONFIG.C_DEBUG_MODE {7} CONFIG.C_USER_SCAN_CHAIN {1} CONFIG.C_NUM_BS_MASTER {1}] [get_bd_cells BSCAN]
   connect_bd_intf_net -intf_net BSCAN [get_bd_intf_pins BSCAN/m0_bscan] [get_bd_intf_pins JTAG/S_BSCAN]

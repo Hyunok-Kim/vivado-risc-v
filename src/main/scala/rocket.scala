@@ -10,12 +10,18 @@ import freechips.rocketchip.tile.{BuildRoCC, OpcodeSet}
 import freechips.rocketchip.util.DontTouch
 import freechips.rocketchip.system._
 
+import freechips.rocketchip.jtag.JTAGIO
+import freechips.rocketchip.devices.debug._
 import chisel3.experimental.{annotate,ChiselAnnotation}
 import firrtl.AttributeAnnotation
 
 class RocketChip(implicit val p: Parameters) extends Module {
 
   val target = Module(LazyModule(new RocketSystem).module)
+
+  val debugReset = target.debug.map(_.ndreset).getOrElse(false.B)
+  val childReset = reset.asBool | debugReset
+  target.reset := childReset
 
   require(target.mem_axi4.size == 1)
   require(target.mmio_axi4.size == 1)
@@ -27,27 +33,31 @@ class RocketChip(implicit val p: Parameters) extends Module {
     val mem_axi4 = target.mem_axi4.head.cloneType
     val dma_axi4 = Flipped(target.dma_axi4.head.cloneType)
     val interrupts = Input(UInt(p(NExtTopInterrupts).W))
+	val jtag = Flipped(new JTAGIO())
   })
-
-  val boardJTAG = Module(new BscanJTAG)
-  val jtagBundle = target.debug.head.systemjtag.head
-
-  // set JTAG parameters
-  jtagBundle.reset := reset
-  jtagBundle.mfr_id := 0x233.U(11.W)
-  jtagBundle.part_number := 0.U(16.W)
-  jtagBundle.version := 0.U(4.W)
-  // connect to BSCAN
-  jtagBundle.jtag.TCK := boardJTAG.tck
-  jtagBundle.jtag.TMS := boardJTAG.tms
-  jtagBundle.jtag.TDI := boardJTAG.tdi
-  boardJTAG.tdo := jtagBundle.jtag.TDO.data
-  boardJTAG.tdoEnable := jtagBundle.jtag.TDO.driven
 
   io.mmio_axi4 <> target.mmio_axi4.head
   io.mem_axi4 <> target.mem_axi4.head
   target.dma_axi4.head <> io.dma_axi4
   target.interrupts := RegNext(RegNext(RegNext(io.interrupts)))
+
+  val systemJtag = target.debug.get.systemjtag.get
+  systemJtag.jtag.TCK := io.jtag.TCK
+  systemJtag.jtag.TMS := io.jtag.TMS
+  systemJtag.jtag.TDI := io.jtag.TDI
+  io.jtag.TDO := systemJtag.jtag.TDO
+  systemJtag.mfr_id := p(JtagDTMKey).idcodeManufId.U(11.W)
+  systemJtag.part_number := p(JtagDTMKey).idcodePartNum.U(16.W)
+  systemJtag.version := p(JtagDTMKey).idcodeVersion.U(4.W)
+  systemJtag.reset := debugReset
+  // MUST use async reset here
+  // otherwise the internal logic(e.g. TLXbar) might not function
+  // if reset deasserted before TCK rises
+  Debug.connectDebugClockAndReset(target.debug, clock, false)
+
+  target.resetctrl.foreach { rc =>
+    rc.hartIsInReset.foreach { _ := false.B }
+  }
 
   target.dontTouchPorts()
 
@@ -391,6 +401,18 @@ class RocketChip(implicit val p: Parameters) extends Module {
     new ChiselAnnotation {
       override def toFirrtl = AttributeAnnotation(io.mmio_axi4.r.bits.last.toTarget, "X_INTERFACE_INFO = \"xilinx.com:interface:aximm:1.0 IO_AXI4 RLAST\"")
     },
+    new ChiselAnnotation {
+      override def toFirrtl = AttributeAnnotation(io.jtag.TCK.toTarget, "X_INTERFACE_INFO = \"xilinx.com:interface:jtag:2.0 JTAG TCK\"")
+    },
+    new ChiselAnnotation {
+      override def toFirrtl = AttributeAnnotation(io.jtag.TMS.toTarget, "X_INTERFACE_INFO = \"xilinx.com:interface:jtag:2.0 JTAG TMS\"")
+    },
+    new ChiselAnnotation {
+      override def toFirrtl = AttributeAnnotation(io.jtag.TDI.toTarget, "X_INTERFACE_INFO = \"xilinx.com:interface:jtag:2.0 JTAG TDI\"")
+    },
+    new ChiselAnnotation {
+      override def toFirrtl = AttributeAnnotation(io.jtag.TDO.data.toTarget, "X_INTERFACE_INFO = \"xilinx.com:interface:jtag:2.0 JTAG TDO\"")
+    },
   ).foreach(annotate(_))
 
 }
@@ -492,7 +514,19 @@ class Rocket32s16 extends Config(
  * The Makefile changes the size to correct value during build.
  * It also sets right core clock frequency.
  */
+
+class WithCustomJtag extends Config((site, here, up) => {
+  case JtagDTMKey =>
+    new JtagDTMConfig(
+      idcodeVersion = 0,
+	  idcodePartNum = 0,
+	  idcodeManufId = 0x489, // SiFive
+	  debugIdleCycles = 5
+    )
+})
+
 class RocketBaseConfig extends Config(
+  new WithCustomJtag ++
   new WithJtagDTM ++
   new WithBootROMFile("workspace/bootrom.img") ++
   new WithExtMemSize(0x380000000L) ++
